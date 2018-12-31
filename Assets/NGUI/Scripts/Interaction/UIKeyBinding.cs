@@ -1,6 +1,6 @@
 //-------------------------------------------------
 //            NGUI: Next-Gen UI kit
-// Copyright © 2011-2017 Tasharen Entertainment Inc
+// Copyright © 2011-2018 Tasharen Entertainment Inc
 //-------------------------------------------------
 
 using UnityEngine;
@@ -11,22 +11,26 @@ using System.Collections.Generic;
 /// </summary>
 
 [AddComponentMenu("NGUI/Interaction/Key Binding")]
+#if W2
+public class UIKeyBinding : MonoBehaviour, TNet.IStartable
+#else
 public class UIKeyBinding : MonoBehaviour
+#endif
 {
 	static List<UIKeyBinding> mList = new List<UIKeyBinding>();
 
-	public enum Action
+	[DoNotObfuscateNGUI] public enum Action
 	{
 		PressAndClick,
 		Select,
 		All,
 	}
 
-	public enum Modifier
+	[DoNotObfuscateNGUI] public enum Modifier
 	{
 		Any,
 		Shift,
-		Control,
+		Ctrl,
 		Alt,
 		None,
 	}
@@ -62,10 +66,8 @@ public class UIKeyBinding : MonoBehaviour
 		get
 		{
 			string s = NGUITools.KeyToCaption(keyCode);
-			if (modifier == Modifier.Alt) return "Alt+" + s;
-			if (modifier == Modifier.Control) return "Control+" + s;
-			if (modifier == Modifier.Shift) return "Shift+" + s;
-			return s;
+			if (modifier == Modifier.None || modifier == Modifier.Any) return s;
+			return modifier + "+" + s;
 		}
 	}
 
@@ -83,6 +85,9 @@ public class UIKeyBinding : MonoBehaviour
 		return false;
 	}
 
+#if W2
+	protected virtual void Awake () { TNet.TNUpdater.AddStart(this); }
+#endif
 	protected virtual void OnEnable () { mList.Add(this); }
 	protected virtual void OnDisable () { mList.Remove(this); }
 
@@ -90,7 +95,11 @@ public class UIKeyBinding : MonoBehaviour
 	/// If we're bound to an input field, subscribe to its Submit notification.
 	/// </summary>
 
+#if W2
+	public virtual void OnStart ()
+#else
 	protected virtual void Start ()
+#endif
 	{
 		UIInput input = GetComponent<UIInput>();
 		mIsInput = (input != null);
@@ -122,7 +131,7 @@ public class UIKeyBinding : MonoBehaviour
 			if (UICamera.GetKey(KeyCode.LeftAlt) ||
 				UICamera.GetKey(KeyCode.RightAlt)) return true;
 		}
-		else if (modifier == Modifier.Control)
+		else if (modifier == Modifier.Ctrl)
 		{
 			if (UICamera.GetKey(KeyCode.LeftControl) ||
 				UICamera.GetKey(KeyCode.RightControl)) return true;
@@ -149,7 +158,7 @@ public class UIKeyBinding : MonoBehaviour
 
 	protected virtual void Update ()
 	{
-		if (UICamera.inputHasFocus) return;
+		if (keyCode != KeyCode.Numlock && UICamera.inputHasFocus) return;
 		if (keyCode == KeyCode.None || !IsModifierActive()) return;
 #if WINDWARD && UNITY_ANDROID
 		// NVIDIA Shield controller has an odd bug where it can open the on-screen keyboard via a KeyCode.Return binding,
@@ -171,12 +180,14 @@ public class UIKeyBinding : MonoBehaviour
 		{
 			if (keyDown)
 			{
+				UICamera.currentTouchID = -1;
 				UICamera.currentKey = keyCode;
 				OnBindingPress(true);
 			}
 
 			if (mPress && keyUp)
 			{
+				UICamera.currentTouchID = -1;
 				UICamera.currentKey = keyCode;
 				OnBindingPress(false);
 				OnBindingClick();
@@ -189,7 +200,7 @@ public class UIKeyBinding : MonoBehaviour
 			{
 				if (mIsInput)
 				{
-					if (!mIgnoreUp && !UICamera.inputHasFocus)
+					if (!mIgnoreUp && !(keyCode != KeyCode.Numlock && UICamera.inputHasFocus))
 					{
 						if (mPress) UICamera.selectedObject = gameObject;
 					}
@@ -220,7 +231,7 @@ public class UIKeyBinding : MonoBehaviour
 
 	static public string GetString (KeyCode keyCode, Modifier modifier)
 	{
-		return (modifier != Modifier.None) ? modifier + "+" + keyCode : keyCode.ToString();
+		return (modifier != Modifier.None) ? modifier + "+" + NGUITools.KeyToCaption(keyCode) : NGUITools.KeyToCaption(keyCode);
 	}
 
 	/// <summary>
@@ -231,24 +242,19 @@ public class UIKeyBinding : MonoBehaviour
 	{
 		key = KeyCode.None;
 		modifier = Modifier.None;
-		if (string.IsNullOrEmpty(text)) return false;
+		if (string.IsNullOrEmpty(text)) return true;
 
-		if (text.Contains("+"))
+		if (text.Length > 2 && text.Contains("+") && text[text.Length - 1] != '+')
 		{
-			string[] parts = text.Split('+');
-
-			try
-			{
-				modifier = (Modifier)System.Enum.Parse(typeof(Modifier), parts[0]);
-				key = (KeyCode)System.Enum.Parse(typeof(KeyCode), parts[1]);
-			}
+			var parts = text.Split(new char[] { '+' }, 2);
+			key = NGUITools.CaptionToKey(parts[1]);
+			try { modifier = (Modifier)System.Enum.Parse(typeof(Modifier), parts[0]); }
 			catch (System.Exception) { return false; }
 		}
 		else
 		{
 			modifier = Modifier.None;
-			try { key = (KeyCode)System.Enum.Parse(typeof(KeyCode), text); }
-			catch (System.Exception) { return false; }
+			key = NGUITools.CaptionToKey(text);
 		}
 		return true;
 	}
@@ -259,12 +265,10 @@ public class UIKeyBinding : MonoBehaviour
 
 	static public Modifier GetActiveModifier ()
 	{
-		UIKeyBinding.Modifier mod = UIKeyBinding.Modifier.None;
-
-		if (UICamera.GetKey(KeyCode.LeftAlt) || UICamera.GetKey(KeyCode.RightAlt)) mod = UIKeyBinding.Modifier.Alt;
-		else if (UICamera.GetKey(KeyCode.LeftShift) || UICamera.GetKey(KeyCode.RightShift)) mod = UIKeyBinding.Modifier.Shift;
-		else if (UICamera.GetKey(KeyCode.LeftControl) || UICamera.GetKey(KeyCode.RightControl)) mod = UIKeyBinding.Modifier.Control;
-
+		var mod = Modifier.None;
+		if (UICamera.GetKey(KeyCode.LeftAlt) || UICamera.GetKey(KeyCode.RightAlt)) mod = Modifier.Alt;
+		else if (UICamera.GetKey(KeyCode.LeftShift) || UICamera.GetKey(KeyCode.RightShift)) mod = Modifier.Shift;
+		else if (UICamera.GetKey(KeyCode.LeftControl) || UICamera.GetKey(KeyCode.RightControl)) mod = Modifier.Ctrl;
 		return mod;
 	}
 }

@@ -1,6 +1,6 @@
 //-------------------------------------------------
 //            NGUI: Next-Gen UI kit
-// Copyright © 2011-2017 Tasharen Entertainment Inc
+// Copyright © 2011-2018 Tasharen Entertainment Inc
 //-------------------------------------------------
 
 using UnityEngine;
@@ -38,11 +38,11 @@ using UnityEditor;
 /// </summary>
 
 [ExecuteInEditMode]
-[AddComponentMenu("NGUI/UI/NGUI Event System (UICamera)")]
+[AddComponentMenu("NGUI/UI/Event System (UICamera)")]
 [RequireComponent(typeof(Camera))]
 public class UICamera : MonoBehaviour
 {
-	public enum ControlScheme
+	[DoNotObfuscateNGUI] public enum ControlScheme
 	{
 		Mouse,
 		Touch,
@@ -53,7 +53,7 @@ public class UICamera : MonoBehaviour
 	/// Whether the touch event will be sending out the OnClick notification at the end.
 	/// </summary>
 
-	public enum ClickNotification
+	[DoNotObfuscateNGUI] public enum ClickNotification
 	{
 		None,
 		Always,
@@ -111,7 +111,7 @@ public class UICamera : MonoBehaviour
 	/// Camera type controls how raycasts are handled by the UICamera.
 	/// </summary>
 
-	public enum EventType : int
+	[DoNotObfuscateNGUI] public enum EventType : int
 	{
 		World_3D,	// Perform a Physics.Raycast and sort by distance to the point that was hit.
 		UI_3D,		// Perform a Physics.Raycast and sort by widget depth.
@@ -252,7 +252,7 @@ public class UICamera : MonoBehaviour
 
 	public LayerMask eventReceiverMask = -1;
 
-	public enum ProcessEventsIn
+	[DoNotObfuscateNGUI] public enum ProcessEventsIn
 	{
 		Update,
 		LateUpdate,
@@ -385,6 +385,7 @@ public class UICamera : MonoBehaviour
 	/// Simulate a right-click on OSX when the Command key is held and a left-click is used (for trackpad).
 	/// </summary>
 
+	[Tooltip("If enabled, command-click will result in a right-click event on OSX")]
 	public bool commandClick = true;
 
 	/// <summary>
@@ -790,7 +791,28 @@ public class UICamera : MonoBehaviour
 	/// Object that should be showing the tooltip.
 	/// </summary>
 
-	static public GameObject tooltipObject { get { return mTooltip; } }
+	static public GameObject tooltipObject { get { return mTooltip; } set { ShowTooltip(value); } }
+
+#if !W2
+	/// <summary>
+	/// Whether this object is a part of the UI or not.
+	/// </summary>
+
+	static public bool IsPartOfUI (GameObject go)
+	{
+		if (go == null || go == fallThrough) return false;
+		return NGUITools.FindInParents<UIRoot>(go) != null;
+	}
+#else
+	// This is a simplified path I use in the Sightseer project. You are welcome to do the same if your UI is only on one layer.
+	static public bool IsPartOfUI (GameObject go)
+	{
+		if (go == null || go == fallThrough) return false;
+		if (mUILayer == -1) mUILayer = LayerMask.NameToLayer("UI");
+		return go.layer == mUILayer;
+	}
+	static int mUILayer = -1;
+#endif
 
 	/// <summary>
 	/// Whether the last raycast was over the UI.
@@ -800,23 +822,49 @@ public class UICamera : MonoBehaviour
 	{
 		get
 		{
-			if (currentTouch != null) return currentTouch.isOverUI;
+			var frame = Time.frameCount;
 
-			for (int i = 0, imax = activeTouches.Count; i < imax; ++i)
+			if (mLastOverCheck != frame)
 			{
-				MouseOrTouch touch = activeTouches[i];
-				if (touch.pressed != null && touch.pressed != fallThrough && NGUITools.FindInParents<UIRoot>(touch.pressed) != null) return true;
+				mLastOverCheck = frame;
+
+				if (currentTouch != null)
+				{
+					if (currentTouch.pressed != null)
+					{
+						mLastOverResult = IsPartOfUI(currentTouch.pressed);
+						return mLastOverResult;
+					}
+
+					mLastOverResult = IsPartOfUI(currentTouch.current);
+					return mLastOverResult;
+				}
+
+				for (int i = 0, imax = activeTouches.Count; i < imax; ++i)
+				{
+					var touch = activeTouches[i];
+
+					if (IsPartOfUI(touch.pressed))
+					{
+						mLastOverResult = true;
+						return mLastOverResult;
+					}
+				}
+
+				for (int i = 0; i < 3; ++i)
+				{
+					var m = mMouse[i];
+
+					if (IsPartOfUI(m.pressed != null ? m.pressed : m.current))
+					{
+						mLastOverResult = true;
+						return mLastOverResult;
+					}
+				}
+
+				mLastOverResult = IsPartOfUI(controller.pressed);
 			}
-
-			for (int i = 0; i < 3; ++i)
-			{
-				var m = mMouse[i];
-				if (m.current != null && m.current != fallThrough && NGUITools.FindInParents<UIRoot>(m.current) != null) return true;
-			}
-
-			if (controller.pressed != null && controller.pressed != fallThrough && NGUITools.FindInParents<UIRoot>(controller.pressed) != null) return true;
-
-			return false;
+			return mLastOverResult;
 		}
 	}
 
@@ -828,27 +876,106 @@ public class UICamera : MonoBehaviour
 	{
 		get
 		{
-			if (inputHasFocus) return true;
-			if (currentTouch != null) return currentTouch.isOverUI;
+			var frame = Time.frameCount;
 
-			for (int i = 0, imax = activeTouches.Count; i < imax; ++i)
+			if (mLastFocusCheck != frame)
 			{
-				MouseOrTouch touch = activeTouches[i];
-				if (touch.pressed != null && touch.pressed != fallThrough && NGUITools.FindInParents<UIRoot>(touch.pressed) != null) return true;
+				mLastFocusCheck = frame;
+
+				if (inputHasFocus)
+				{
+					mLastFocusResult = true;
+					return mLastFocusResult;
+				}
+
+				if (currentTouch != null)
+				{
+					mLastFocusResult = currentTouch.isOverUI;
+					return mLastFocusResult;
+				}
+
+				for (int i = 0, imax = activeTouches.Count; i < imax; ++i)
+				{
+					var touch = activeTouches[i];
+
+					if (IsPartOfUI(touch.pressed))
+					{
+						mLastFocusResult = true;
+						return mLastFocusResult;
+					}
+				}
+
+				for (int i = 0; i < 3; ++i)
+				{
+					var m = mMouse[i];
+
+					if (IsPartOfUI(m.pressed) || IsPartOfUI(m.current))
+					{
+						mLastFocusResult = true;
+						return mLastFocusResult;
+					}
+				}
+
+				mLastFocusResult = IsPartOfUI(controller.pressed);
 			}
-
-			for (int i = 0; i < 3; ++i)
-			{
-				var m = mMouse[i];
-				if (m.pressed != null && m.pressed != fallThrough && NGUITools.FindInParents<UIRoot>(m.pressed) != null) return true;
-				if (m.current != null && m.current != fallThrough && NGUITools.FindInParents<UIRoot>(m.current) != null) return true;
-			}
-
-			if (controller.pressed != null && controller.pressed != fallThrough && NGUITools.FindInParents<UIRoot>(controller.pressed) != null) return true;
-
-			return false;
+			return mLastFocusResult;
 		}
 	}
+
+	/// <summary>
+	/// Whether there is a active current focus on the UI -- either input, or an active touch.
+	/// </summary>
+
+	static public bool interactingWithUI
+	{
+		get
+		{
+			var frame = Time.frameCount;
+
+			if (mLastInteractionCheck != frame)
+			{
+				mLastInteractionCheck = frame;
+
+				if (inputHasFocus)
+				{
+					mLastInteractionResult = true;
+					return mLastInteractionResult;
+				}
+
+				for (int i = 0, imax = activeTouches.Count; i < imax; ++i)
+				{
+					MouseOrTouch touch = activeTouches[i];
+
+					if (IsPartOfUI(touch.pressed))
+					{
+						mLastInteractionResult = true;
+						return mLastInteractionResult;
+					}
+				}
+
+				for (int i = 0; i < 3; ++i)
+				{
+					var m = mMouse[i];
+
+					if (IsPartOfUI(m.pressed))
+					{
+						mLastInteractionResult = true;
+						return mLastInteractionResult;
+					}
+				}
+
+				mLastInteractionResult = IsPartOfUI(controller.pressed);
+			}
+			return mLastInteractionResult;
+		}
+	}
+
+	static int mLastInteractionCheck = -1;
+	static bool mLastInteractionResult = false;
+	static int mLastFocusCheck = -1;
+	static bool mLastFocusResult = false;
+	static int mLastOverCheck = -1;
+	static bool mLastOverResult = false;
 
 	static GameObject mRayHitObject;
 	static GameObject mHover;
@@ -1889,6 +2016,9 @@ public class UICamera : MonoBehaviour
 	void OnValidate () { Start(); }
 #endif
 
+	[ContextMenu("Start ignoring events")] void StartIgnoring () { ignoreAllEvents = true; }
+	[ContextMenu("Stop ignoring events")] void StopIgnoring () { ignoreAllEvents = false; }
+
 	/// <summary>
 	/// Check the input and send out appropriate events.
 	/// </summary>
@@ -1966,7 +2096,7 @@ public class UICamera : MonoBehaviour
 			}
 
 			if (currentScheme == ControlScheme.Mouse && showTooltips && mTooltipTime != 0f && !UIPopupList.isOpen && mMouse[0].dragged == null &&
-				(mTooltipTime < RealTime.time || GetKey(KeyCode.LeftShift) || GetKey(KeyCode.RightShift)))
+				(mTooltipTime < Time.unscaledTime || GetKey(KeyCode.LeftShift) || GetKey(KeyCode.RightShift)))
 			{
 				currentTouch = mMouse[0];
 				currentTouchID = -1;
@@ -2037,7 +2167,10 @@ public class UICamera : MonoBehaviour
 			currentKey = KeyCode.Mouse0;
 			posChanged = true;
 		}
-		else if (sqrMag > 0.001f) posChanged = true;
+		else if (sqrMag > 0.001f)
+		{
+			posChanged = true;
+		}
 
 		// Propagate the updates to the other mouse buttons
 		for (int i = 1; i < 3; ++i)
@@ -2051,26 +2184,36 @@ public class UICamera : MonoBehaviour
 		{
 			mNextRaycast = RealTime.time + 0.02f;
 			Raycast(currentTouch);
-			for (int i = 0; i < 3; ++i) mMouse[i].current = currentTouch.current;
+
+			if (isPressed)
+			{
+				posChanged = true;
+				for (int i = 0; i < 3; ++i) mMouse[i].current = currentTouch.current;
+			}
+			else if (mMouse[0].current != currentTouch.current)
+			{
+				currentKey = KeyCode.Mouse0;
+				posChanged = true;
+				for (int i = 0; i < 3; ++i) mMouse[i].current = currentTouch.current;
+			}
 		}
 
 		bool highlightChanged = (currentTouch.last != currentTouch.current);
 		bool wasPressed = (currentTouch.pressed != null);
 
-		if (!wasPressed)
-			hoveredObject = currentTouch.current;
+		if (!wasPressed && posChanged) hoveredObject = currentTouch.current;
 
 		currentTouchID = -1;
 		if (highlightChanged) currentKey = KeyCode.Mouse0;
 
-		if (!isPressed && posChanged && (!stickyTooltip || highlightChanged))
+		if (!isPressed && posChanged)
 		{
 			if (mTooltipTime != 0f)
 			{
 				// Delay the tooltip
 				mTooltipTime = Time.unscaledTime + tooltipDelay;
 			}
-			else if (mTooltip != null)
+			else if (mTooltip != null && (!stickyTooltip || highlightChanged))
 			{
 				// Hide the tooltip
 				ShowTooltip(null);
@@ -2108,7 +2251,7 @@ public class UICamera : MonoBehaviour
 				currentTouchID = -1 - i;
 				currentKey = KeyCode.Mouse0 + i;
 			}
-	
+
 			// We don't want to update the last camera while there is a touch happening
 			if (pressed)
 			{
@@ -2116,7 +2259,7 @@ public class UICamera : MonoBehaviour
 				currentTouch.pressTime = RealTime.time;
 			}
 			else if (currentTouch.pressed != null) currentCamera = currentTouch.pressedCam;
-	
+
 			// Process the mouse events
 			ProcessTouch(pressed, unpressed);
 		}
@@ -2699,7 +2842,7 @@ public class UICamera : MonoBehaviour
 			ProcessPress(pressed, click, drag);
 
 			// Hold event = show tooltip
-			if (currentTouch.deltaTime > tooltipDelay)
+			if (tooltipDelay != 0f && currentTouch.deltaTime > tooltipDelay)
 			{
 				if (currentTouch.pressed == currentTouch.current && mTooltipTime != 0f && !currentTouch.dragStarted)
 				{
@@ -2756,4 +2899,14 @@ public class UICamera : MonoBehaviour
 	/// </summary>
 
 	static public bool HideTooltip () { return ShowTooltip(null); }
+
+	/// <summary>
+	/// Reset the tooltip timer, allowing the tooltip to show again even over the same widget.
+	/// </summary>
+
+	static public void ResetTooltip (float delay = 0.5f)
+	{
+		ShowTooltip(null);
+		mTooltipTime = Time.unscaledTime + delay;
+	}
 }

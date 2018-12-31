@@ -1,6 +1,6 @@
 //-------------------------------------------------
 //            NGUI: Next-Gen UI kit
-// Copyright © 2011-2017 Tasharen Entertainment Inc
+// Copyright © 2011-2018 Tasharen Entertainment Inc
 //-------------------------------------------------
 
 using UnityEngine;
@@ -12,7 +12,7 @@ using System.Collections.Generic;
 
 public class TweenLetters : UITweener
 {
-	public enum AnimationLetterOrder { Forward, Reverse, Random }
+	[DoNotObfuscateNGUI] public enum AnimationLetterOrder { Forward, Reverse, Random }
 
 	class LetterProperties
 	{
@@ -78,6 +78,9 @@ public class TweenLetters : UITweener
 		if (verts == null || vertexCount == 0) return;
 		if (mLabel == null) return;
 
+#if !UNITY_EDITOR
+		try {
+#endif
 		var quads = mLabel.quadsPerCharacter;
 		const int quadVerts = 4;
 		var characterCount = vertexCount / quads / quadVerts;
@@ -102,7 +105,7 @@ public class TweenLetters : UITweener
 		var qRot = Quaternion.Euler(mCurrent.rot);
 		var vert = Vector3.zero;
 		var c = Color.clear;
-		var timeIntoAnimation = base.tweenFactor * base.duration;
+		var timeIntoAnimation = tweenFactor * duration;
 
 		for (int q = 0; q < quads; ++q)
 		{
@@ -118,7 +121,7 @@ public class TweenLetters : UITweener
 #endif
 					continue;
 				}
-				
+
 				letterStart = mLetter[letter].start;
 				t = Mathf.Clamp(timeIntoAnimation - letterStart, 0f, mLetter[letter].duration) / mLetter[letter].duration;
 				t = animationCurve.Evaluate(t);
@@ -148,11 +151,14 @@ public class TweenLetters : UITweener
 					verts[iv] = vert;
 
 					c = cols[iv];
-					c.a = lerpAlpha;
+					c.a *= lerpAlpha;
 					cols[iv] = c;
 				}
 			}
 		}
+#if !UNITY_EDITOR
+		} catch (System.Exception) { enabled = false; }
+#endif
 	}
 
 #if UNITY_4_7
@@ -227,22 +233,22 @@ public class TweenLetters : UITweener
 		{
 			for (int i = 0; i < mLetter.Length; ++i)
 			{
-				mLetter[i].start = Random.Range(0f, mCurrent.randomness.x * base.duration);
-				float end = Random.Range(mCurrent.randomness.y * base.duration, base.duration);
+				mLetter[i].start = Random.Range(0f, mCurrent.randomness.x * duration);
+				float end = Random.Range(mCurrent.randomness.y * duration, duration);
 				mLetter[i].duration = end - mLetter[i].start;
 			}
 		}
 		else
 		{
 			// Calculate how long each letter will take to fade in.
-			float lengthPerLetter = base.duration / (float)letterCount;
+			float lengthPerLetter = duration / letterCount;
 			float flippedOverlap = 1f - mCurrent.overlap;
 
 			// Figure out how long the animation will be taking into account overlapping letters.
 			float totalDuration = lengthPerLetter * letterCount * flippedOverlap;
 
 			// Scale the smaller total running time back up to the requested animation time.
-			float letterDuration = ScaleRange(lengthPerLetter, totalDuration + lengthPerLetter * mCurrent.overlap, base.duration);
+			float letterDuration = ScaleRange(lengthPerLetter, totalDuration + lengthPerLetter * mCurrent.overlap, duration);
 
 			float offset = 0;
 			for (int i = 0; i < mLetter.Length; ++i)

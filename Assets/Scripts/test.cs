@@ -13,4 +13,9 @@ public class test : MonoBehaviour {
 	void Update () {
 		
 	}
+
+    public void Test()
+    {
+        Debug.Log("aaaa");
+    }
 }

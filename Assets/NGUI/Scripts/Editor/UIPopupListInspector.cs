@@ -1,6 +1,6 @@
 //-------------------------------------------------
 //            NGUI: Next-Gen UI kit
-// Copyright © 2011-2017 Tasharen Entertainment Inc
+// Copyright © 2011-2018 Tasharen Entertainment Inc
 //-------------------------------------------------
 
 #if !UNITY_3_5 && !UNITY_FLASH
@@ -38,15 +38,15 @@ public class UIPopupListInspector : UIWidgetContainerEditor
 			mList.ambigiousFont = NGUISettings.ambigiousFont;
 			mList.fontSize = NGUISettings.fontSize;
 			mList.fontStyle = NGUISettings.fontStyle;
-			EditorUtility.SetDirty(mList);
+			NGUITools.SetDirty(mList);
 		}
 
 		if (mList.atlas == null && mList.background2DSprite == null && mList.highlight2DSprite == null)
 		{
-			mList.atlas = NGUISettings.atlas;
+			mList.atlas = NGUISettings.atlas as Object;
 			mList.backgroundSprite = NGUISettings.selectedSprite;
 			mList.highlightSprite = NGUISettings.selectedSprite;
-			EditorUtility.SetDirty(mList);
+			NGUITools.SetDirty(mList);
 		}
 	}
 
@@ -57,9 +57,12 @@ public class UIPopupListInspector : UIWidgetContainerEditor
 
 	void OnSelectAtlas (Object obj)
 	{
+		// Legacy atlas support
+		if (obj != null && obj is GameObject) obj = (obj as GameObject).GetComponent<UIAtlas>();
+
 		RegisterUndo();
-		mList.atlas = obj as UIAtlas;
-		NGUISettings.atlas = mList.atlas;
+		mList.atlas = obj;
+		NGUISettings.atlas = obj as INGUIAtlas;
 	}
 
 	void OnBackground (string spriteName)
@@ -127,6 +130,7 @@ public class UIPopupListInspector : UIWidgetContainerEditor
 		}
 
 		NGUIEditorTools.DrawProperty("Position", serializedObject, "position");
+		NGUIEditorTools.DrawProperty("Selection", serializedObject, "selection");
 		NGUIEditorTools.DrawProperty("Alignment", serializedObject, "alignment");
 		NGUIEditorTools.DrawProperty("Open on", serializedObject, "openOn");
 		NGUIEditorTools.DrawProperty("On Top", serializedObject, "separatePanel");
@@ -167,15 +171,18 @@ public class UIPopupListInspector : UIWidgetContainerEditor
 			GUILayout.BeginHorizontal();
 			{
 				if (NGUIEditorTools.DrawPrefixButton("Atlas"))
-					ComponentSelector.Show<UIAtlas>(OnSelectAtlas);
+				{
+					if (mList.atlas is UIAtlas) ComponentSelector.Show<UIAtlas>(OnSelectAtlas);
+					else ComponentSelector.Show<NGUIAtlas>(OnSelectAtlas);
+				}
 				atlasSp = NGUIEditorTools.DrawProperty("", serializedObject, "atlas");
 			}
 			GUILayout.EndHorizontal();
 
 			if (atlasSp != null && atlasSp.objectReferenceValue != null)
 			{
-				NGUIEditorTools.DrawPaddedSpriteField("Background", mList.atlas, mList.backgroundSprite, OnBackground);
-				NGUIEditorTools.DrawPaddedSpriteField("Highlight", mList.atlas, mList.highlightSprite, OnHighlight);
+				NGUIEditorTools.DrawPaddedSpriteField("Background", mList.atlas as INGUIAtlas, mList.backgroundSprite, OnBackground);
+				NGUIEditorTools.DrawPaddedSpriteField("Highlight", mList.atlas as INGUIAtlas, mList.highlightSprite, OnHighlight);
 			}
 			else
 			{
